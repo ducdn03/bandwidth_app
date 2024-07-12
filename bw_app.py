@@ -6,6 +6,8 @@ import threading
 from tkinter import messagebox
 from tkinter.filedialog import asksaveasfilename
 from tkinter import ttk
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 
 
 Server_List = {'Singapore': '89.187.160.1', 'Tokyo': '89.187.162.1', 'HongKong': '84.17.57.129'}
@@ -22,15 +24,16 @@ class BandwidthTest(tk.Tk):
         self.duration = duration
         self.iterations = iterations
         self.test_results = []
-        self.title = "Bandwidth Test"
-        self.geometry("800x600")
-        self.create_widget()
         self.window = None
         self.ServerChoosen = None
         self.InterationChoosen = None
         self.progress = None
+        self.title("Bandwidth Test")
+        self.geometry("800x600")
+        self.create_widget()
 
     def create_widget(self):
+
         menubar = tk.Menu(self)
 
         option = tk.Menu(menubar, tearoff=0)
@@ -65,11 +68,13 @@ class BandwidthTest(tk.Tk):
         self.upl.clear()
         self.dowl.clear()
         for i in range(self.iterations):
-            self.progress['value'] = i
+            self.progress['value'] = i * (100 / self.iterations)
             self.window.update_idletasks()
             threading.Thread(target=self.run_iperf3_test()).start()
             sleep(1)
 
+        self.progress['value'] = 100
+        self.window.update_idletasks()
         error_cnt = 0
 
         for i, result in enumerate(self.test_results):
@@ -83,7 +88,22 @@ class BandwidthTest(tk.Tk):
             self.window.message = messagebox.showerror(title="test state", message="test failed")
             return
         self.window.message = messagebox.showinfo(title="test state", message="successfully test")
-        self.window.result_text = tk.Text(self.window, height=50, width=100)
+        fig = Figure(figsize=(5, 5), dpi=80)
+        plot1 = fig.add_subplot(111)
+
+        plot1.plot(self.upl, label='Upload')
+        plot1.plot(self.dowl, label='Download')
+        plot1.legend()
+
+        canvas = FigureCanvasTkAgg(fig, master=self.window)
+        canvas.draw()
+        canvas.get_tk_widget().pack()
+
+        toolbar = NavigationToolbar2Tk(canvas, self.window)
+        toolbar.update()
+        canvas.get_tk_widget().pack()
+
+        self.window.result_text = tk.Text(self.window, height=10, width=50)
         self.window.result_text.pack()
 
         average_upl, average_dowl = self.average_bandwidth()
@@ -92,10 +112,12 @@ class BandwidthTest(tk.Tk):
                                                f"Dowload: {average_dowl} Mbps\n"
                                                f"Server: {self.server}\n")
 
+
     def bandwidth_test(self):
         self.window = tk.Tk()
-        self.window.geometry('640x480')
-        self.progress = ttk.Progressbar(self.window, orient="horizontal", length=self.iterations, mode='determinate')
+        self.window.title("Bandwidth Test Module")
+        self.window.geometry('800x600')
+        self.progress = ttk.Progressbar(self.window, orient="horizontal", length=100, mode='determinate')
         self.progress.pack(pady=10)
 
         start_button = tk.Button(self.window, text='Start', command=self.run_multiple_tests)
@@ -130,6 +152,8 @@ class BandwidthTest(tk.Tk):
         messagebox.showinfo(title="Export state", message="Export Completed")
 
     def average_bandwidth(self):
+        if len(self.upl) == 0 or len(self.dowl) == 0:
+            return
         average_upl = sum(self.upl) / len(self.upl)
         average_dowl = sum(self.dowl) / len(self.dowl)
         return average_upl, average_dowl
