@@ -8,6 +8,7 @@ from tkinter.filedialog import asksaveasfilename
 from tkinter import ttk
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
+from openpyxl.chart import Reference, BarChart
 
 
 Server_List = {'Singapore': '89.187.160.1', 'Tokyo': '89.187.162.1', 'HongKong': '84.17.57.129'}
@@ -126,6 +127,7 @@ class BandwidthTest(tk.Tk):
     def export_bandwidth_test_to_excel(self):
         wb = openpyxl.Workbook()
         sheet = wb.active
+        sheet.title = "Bandwidth Test Result"
         sheet['A1'].value = "Upload (Mbps)"
         sheet['B1'].value = "Download (Mbps)"
         row = 2
@@ -145,11 +147,29 @@ class BandwidthTest(tk.Tk):
         sheet['E5'].value = "{:.3f}".format(average_upl)
         sheet['E6'].value = "{:.3f}".format(average_dowl)
 
+        # Create upload chart
+        upload_chart = BarChart()
+        upload_chart.title = "Upload Chart"
+        upload_chart.x_axis.title = "Times"
+        upload_chart.y_axis.title = "Mbps"
+        upload_values = Reference(sheet, min_col=1, max_col=1, min_row=2, max_row=len(self.upl) + 1)
+        upload_chart.add_data(upload_values, titles_from_data=False)
+        sheet.add_chart(upload_chart, "G2")
+
+        # Create download chart
+        download_chart = BarChart()
+        download_chart.title = "Download Chart"
+        download_chart.x_axis.title = "Times"
+        download_chart.y_axis.title = "Mbps"
+        download_values = Reference(sheet, min_col=2, max_col=2, min_row=2, max_row=len(self.dowl) + 1)
+        download_chart.add_data(download_values, titles_from_data=False)
+        sheet.add_chart(download_chart, "G20")
+
         files = [('Excel Files', '*.xlsx')]
         save_path = asksaveasfilename(filetypes=files)
         if save_path:
             wb.save(save_path)
-        messagebox.showinfo(title="Export state", message="Export Completed")
+            messagebox.showinfo(title="Export state", message="Export Completed")
 
     def average_bandwidth(self):
         if len(self.upl) == 0 or len(self.dowl) == 0:
