@@ -10,6 +10,7 @@ from tkinter import ttk
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 from openpyxl.chart import Reference, LineChart
+from functools import partial
 
 
 Server_List = {'Singapore': '89.187.160.1', 'Tokyo': 'speedtest.tyo11.jp.leaseweb.net', 'HongKong': '84.17.57.129'}
@@ -229,15 +230,16 @@ class BandwidthTest(tk.Tk):
         self.InterationChoosen.grid(column=1, row=40)
         self.InterationChoosen.current(0)
 
-        save_button = tk.Button(window, text="Save", command=self.save_seletion)
+        save_button = tk.Button(window, text="Save", command=partial(self.save_seletion, window))
         save_button.grid(column=1, row=45, padx=10, pady=10)
 
-    def save_seletion(self):
+    def save_seletion(self, window):
         choosen_server = self.ServerChoosen.get()
         self.server = Server_List['{}'.format(choosen_server)]
 
         choosen_interation = self.InterationChoosen.get()
         self.iterations = Interation_List['{}'.format(choosen_interation)]
+        window.destroy()
 
 
 if __name__ == '__main__':
