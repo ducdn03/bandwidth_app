@@ -1,5 +1,7 @@
 import json
 import subprocess
+import time
+from time import sleep
 import tkinter as tk
 from functools import partial
 from tkinter import messagebox
@@ -12,11 +14,11 @@ from matplotlib.figure import Figure
 from openpyxl.chart import Reference, LineChart
 
 Server_List = {'Singapore': '89.187.160.1', 'Tokyo': 'speedtest.tyo11.jp.leaseweb.net', 'HongKong': '84.17.57.129'}
-Interation_List = {'10': 10, '20': 20, '50': 50, '100': 100, '1000': 1000}
+Interation_List = {'1': 1, '10': 10, '20': 20, '50': 50, '100': 100, '1000': 1000}
 
 
 class BandwidthTest(tk.Tk):
-    def __init__(self, server='89.187.160.1', port=5201, duration=1, iterations=10):
+    def __init__(self, server='89.187.160.1', port=5201, duration=10, iterations=1):
         super().__init__()
         self.upl = []
         self.dowl = []
@@ -64,36 +66,47 @@ class BandwidthTest(tk.Tk):
             result_data = json.loads(result.stdout)
 
             if 'error' in result_data:
-                return 'error'
+                return self.test_results.append({'error': result_data['error']})
             else:
-                return {'speed': result_data['end']['sum_sent']['bits_per_second'] / 1e6}
+                for interval in result_data['intervals']:
+                    if reverse:
+                        self.test_results.append({
+                            'received_Mbps': interval['sum']['bits_per_second'] / 1e6,
+                        })
+                    else:
+                        self.test_results.append({
+                            'sent_Mbps': interval['sum']['bits_per_second'] / 1e6,
+                        })
         except subprocess.CalledProcessError as e:
-            return {'error': str(e)}
+            self.test_results.append({'error': str(e)})
         except json.JSONDecodeError:
-            return {'error': 'Failed to parse JSON output from iperf3'}
+            self.test_results.append({'error': 'Failed to parse JSON output from iperf3'})
 
     def run_multiple_tests(self, window):
         self.test_results.clear()
         self.upl.clear()
         self.dowl.clear()
         error_cnt = 0
+        start_time = time.time()
         for i in range(self.iterations):
             self.progress['value'] = i * (100 / self.iterations)
             window.update_idletasks()
-            res = self.run_iperf3_test(False)
-            if 'error' in res:
-                error_cnt += 1
-            else:
-                self.upl.append(round(res['speed'], 1))
+            self.run_iperf3_test(False)
+            sleep(1)
+            self.run_iperf3_test(True)
 
-            res = self.run_iperf3_test(True)
-            if 'error' in res:
-                error_cnt += 1
-            else:
-                self.dowl.append(round(res['speed'], 1))
-
+        end_time = time.time()
+        print(end_time - start_time)
         self.progress['value'] = 100
         window.update_idletasks()
+        for res in self.test_results:
+            if 'sent_Mbps' in res:
+                self.upl.append(round(res["sent_Mbps"], 1))
+            elif 'received_Mbps' in res:
+                self.dowl.append(round(res["received_Mbps"], 1))
+            else:
+                error_cnt += 1
+        print(time.time() - end_time)
         if error_cnt >= (self.iterations / 5):
             window.message = messagebox.showerror(title="test state", message="test failed")
             window.destroy()
@@ -210,7 +223,7 @@ class BandwidthTest(tk.Tk):
                  font=("Times New Roman", 14)).grid(column=0,
                                                     row=40, padx=10, pady=25)
         self.InterationChoosen = ttk.Combobox(window, width=27, textvariable=var2)
-        self.InterationChoosen['values'] = ('10', '20', '50', '100', '1000')
+        self.InterationChoosen['values'] = ('1', '10', '20', '50', '100', '1000')
 
         self.InterationChoosen.grid(column=1, row=40)
         self.InterationChoosen.current(0)
