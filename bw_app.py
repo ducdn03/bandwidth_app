@@ -1,3 +1,4 @@
+import time
 from time import sleep
 import iperf3
 import openpyxl
@@ -8,10 +9,10 @@ from tkinter.filedialog import asksaveasfilename
 from tkinter import ttk
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
-from openpyxl.chart import Reference, BarChart
+from openpyxl.chart import Reference, LineChart
 
 
-Server_List = {'Singapore': '89.187.160.1', 'Tokyo': '89.187.162.1', 'HongKong': '84.17.57.129'}
+Server_List = {'Singapore': '89.187.160.1', 'Tokyo': 'speedtest.tyo11.jp.leaseweb.net', 'HongKong': '84.17.57.129'}
 Interation_List = {'10': 10, '20': 20, '50': 50, '100': 100, '1000': 1000}
 
 
@@ -56,8 +57,9 @@ class BandwidthTest(tk.Tk):
         result = client.run()
 
         if result.error:
-            #messagebox.showerror(title="result error", message=f"{result.error}")
-            return
+            return self.test_results.append({
+                'error': result.error,
+            })
         else:
             return self.test_results.append({
                 'sent_Mbps': result.sent_Mbps,
@@ -85,7 +87,7 @@ class BandwidthTest(tk.Tk):
                 self.upl.append(result["sent_Mbps"])
                 self.dowl.append(result["received_Mbps"])
 
-        if error_cnt >= (self.iterations/2):
+        if error_cnt >= (self.iterations/5):
             self.window.message = messagebox.showerror(title="test state", message="test failed")
             return
         self.window.message = messagebox.showinfo(title="test state", message="successfully test")
@@ -106,13 +108,10 @@ class BandwidthTest(tk.Tk):
 
         self.window.result_text = tk.Text(self.window, height=10, width=50)
         self.window.result_text.pack()
-
         average_upl, average_dowl = self.average_bandwidth()
-
         self.window.result_text.insert(tk.END, f"Upload: {average_upl} Mbps\n"
                                                f"Dowload: {average_dowl} Mbps\n"
                                                f"Server: {self.server}\n")
-
 
     def bandwidth_test(self):
         self.window = tk.Tk()
@@ -147,22 +146,26 @@ class BandwidthTest(tk.Tk):
         sheet['E5'].value = "{:.3f}".format(average_upl)
         sheet['E6'].value = "{:.3f}".format(average_dowl)
 
+        for row in sheet.iter_rows(min_row=2, max_row=len(self.upl) + 1, min_col=1, max_col=2):
+            for cell in row:
+                cell.number_format = '0.000'
+
         # Create upload chart
-        upload_chart = BarChart()
+        upload_chart = LineChart()
         upload_chart.title = "Upload Chart"
         upload_chart.x_axis.title = "Times"
         upload_chart.y_axis.title = "Mbps"
         upload_values = Reference(sheet, min_col=1, max_col=1, min_row=2, max_row=len(self.upl) + 1)
-        upload_chart.add_data(upload_values, titles_from_data=False)
+        upload_chart.add_data(upload_values, titles_from_data=True)
         sheet.add_chart(upload_chart, "G2")
 
         # Create download chart
-        download_chart = BarChart()
+        download_chart = LineChart()
         download_chart.title = "Download Chart"
         download_chart.x_axis.title = "Times"
         download_chart.y_axis.title = "Mbps"
         download_values = Reference(sheet, min_col=2, max_col=2, min_row=2, max_row=len(self.dowl) + 1)
-        download_chart.add_data(download_values, titles_from_data=False)
+        download_chart.add_data(download_values, titles_from_data=True)
         sheet.add_chart(download_chart, "G20")
 
         files = [('Excel Files', '*.xlsx')]
@@ -180,6 +183,7 @@ class BandwidthTest(tk.Tk):
 
     def configure_setting(self):
         window = tk.Tk()
+        window.title("configure")
         window.geometry('640x480')
 
         tk.Label(window, text="Select the Server :",

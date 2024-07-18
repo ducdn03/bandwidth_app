@@ -1,17 +1,15 @@
 import json
 import subprocess
-from time import sleep
-import openpyxl
 import tkinter as tk
-import threading
-from tkinter import messagebox
-from tkinter.filedialog import asksaveasfilename
-from tkinter import ttk
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
-from openpyxl.chart import Reference, LineChart
 from functools import partial
+from tkinter import messagebox
+from tkinter import ttk
+from tkinter.filedialog import asksaveasfilename
 
+import openpyxl
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
+from matplotlib.figure import Figure
+from openpyxl.chart import Reference, LineChart
 
 Server_List = {'Singapore': '89.187.160.1', 'Tokyo': 'speedtest.tyo11.jp.leaseweb.net', 'HongKong': '84.17.57.129'}
 Interation_List = {'10': 10, '20': 20, '50': 50, '100': 100, '1000': 1000}
@@ -67,54 +65,40 @@ class BandwidthTest(tk.Tk):
 
             if 'error' in result_data:
                 return 'error'
-                #self.test_results.append({'error': result_data['error']})
             else:
-                if reverse:
-                    return result_data['end']['sum_sent']['bits_per_second'] / 1e6
-                else:
-                    return result_data['end']['sum_sent']['bits_per_second'] / 1e6
-
-                #self.test_results.append({
-                #    'sent_Mbps': result_data['end']['sum_sent']['bits_per_second'] / 1e6,
-                #    'received_Mbps': result_data['end']['sum_received']['bits_per_second'] / 1e6,
-                #})
+                return {'speed': result_data['end']['sum_sent']['bits_per_second'] / 1e6}
         except subprocess.CalledProcessError as e:
-            self.test_results.append({'error': str(e)})
+            return {'error': str(e)}
         except json.JSONDecodeError:
-            self.test_results.append({'error': 'Failed to parse JSON output from iperf3'})
+            return {'error': 'Failed to parse JSON output from iperf3'}
 
-    def run_multiple_tests(self):
+    def run_multiple_tests(self, window):
         self.test_results.clear()
         self.upl.clear()
         self.dowl.clear()
+        error_cnt = 0
         for i in range(self.iterations):
             self.progress['value'] = i * (100 / self.iterations)
-            self.window.update_idletasks()
-            #threading.Thread(target=self.run_iperf3_test(), args=False).start()
+            window.update_idletasks()
             res = self.run_iperf3_test(False)
-            if res != 'error':
-                self.upl.append(res)
+            if 'error' in res:
+                error_cnt += 1
+            else:
+                self.upl.append(round(res['speed'], 1))
 
             res = self.run_iperf3_test(True)
-            if res != 'error':
-                self.dowl.append(res)
-            sleep(0.25)
+            if 'error' in res:
+                error_cnt += 1
+            else:
+                self.dowl.append(round(res['speed'], 1))
 
         self.progress['value'] = 100
-        self.window.update_idletasks()
-        error_cnt = 0
-        """
-        for i, result in enumerate(self.test_results):
-            if 'error' in result:
-                error_cnt = error_cnt + 1
-            else:
-                self.upl.append(result["sent_Mbps"])
-                self.dowl.append(result["received_Mbps"])
-        """
-        if error_cnt >= (self.iterations/5):
-            self.window.message = messagebox.showerror(title="test state", message="test failed")
+        window.update_idletasks()
+        if error_cnt >= (self.iterations / 5):
+            window.message = messagebox.showerror(title="test state", message="test failed")
+            window.destroy()
             return
-        self.window.message = messagebox.showinfo(title="test state", message="successfully test")
+        window.message = messagebox.showinfo(title="test state", message="successfully test")
         fig = Figure(figsize=(5, 5), dpi=80)
         plot1 = fig.add_subplot(111)
 
@@ -122,29 +106,34 @@ class BandwidthTest(tk.Tk):
         plot1.plot(self.dowl, label='Download')
         plot1.legend()
 
-        canvas = FigureCanvasTkAgg(fig, master=self.window)
+        canvas = FigureCanvasTkAgg(fig, master=window)
         canvas.draw()
         canvas.get_tk_widget().pack()
 
-        toolbar = NavigationToolbar2Tk(canvas, self.window)
+        toolbar = NavigationToolbar2Tk(canvas, window)
         toolbar.update()
         canvas.get_tk_widget().pack()
 
-        self.window.result_text = tk.Text(self.window, height=10, width=50)
-        self.window.result_text.pack()
+        window.result_text = tk.Text(window, height=10, width=50)
+        window.result_text.pack()
         average_upl, average_dowl = self.average_bandwidth()
-        self.window.result_text.insert(tk.END, f"Upload: {average_upl} Mbps\n"
-                                               f"Dowload: {average_dowl} Mbps\n"
-                                               f"Server: {self.server}\n")
+        if average_upl == 'error' and average_dowl == ' error':
+            window.message = messagebox.showerror(title="average bandwidth state", message="average bandwidth error")
+            window.destroy()
+            return
+        server = {i for i in Server_List if Server_List[i] == f"{self.server}"}
+        window.result_text.insert(tk.END, f"Upload: {average_upl} Mbps\n"
+                                          f"Dowload: {average_dowl} Mbps\n"
+                                          f"Server: {server}\n")
 
     def bandwidth_test(self):
-        self.window = tk.Tk()
-        self.window.title("Bandwidth Test Module")
-        self.window.geometry('800x600')
-        self.progress = ttk.Progressbar(self.window, orient="horizontal", length=100, mode='determinate')
+        window = tk.Tk()
+        window.title("Bandwidth Test Module")
+        window.geometry('800x600')
+        self.progress = ttk.Progressbar(window, orient="horizontal", length=100, mode='determinate')
         self.progress.pack(pady=10)
 
-        start_button = tk.Button(self.window, text='Start', command=self.run_multiple_tests)
+        start_button = tk.Button(window, text='Start', command=partial(self.run_multiple_tests, window))
         start_button.pack(pady=10)
 
     def export_bandwidth_test_to_excel(self):
@@ -155,24 +144,20 @@ class BandwidthTest(tk.Tk):
         sheet['B1'].value = "Download (Mbps)"
         row = 2
         for data in self.upl:
-            sheet[f'A{row}'].value = "{:.3f}".format(data)
+            sheet[f'A{row}'].value = data
             row += 1
 
         row = 2
         for data in self.dowl:
-            sheet[f'B{row}'].value = "{:.3f}".format(data)
+            sheet[f'B{row}'].value = data
             row += 1
 
         average_upl, average_dowl = self.average_bandwidth()
         sheet['D5'].value = "Average Upload: "
         sheet['D6'].value = "Average Download: "
 
-        sheet['E5'].value = "{:.3f}".format(average_upl)
-        sheet['E6'].value = "{:.3f}".format(average_dowl)
-
-        for row in sheet.iter_rows(min_row=2, max_row=len(self.upl) + 1, min_col=1, max_col=2):
-            for cell in row:
-                cell.number_format = '0.000'
+        sheet['E5'].value = "{:.2f}".format(average_upl)
+        sheet['E6'].value = "{:.2f}".format(average_dowl)
 
         # Create upload chart
         upload_chart = LineChart()
@@ -200,7 +185,7 @@ class BandwidthTest(tk.Tk):
 
     def average_bandwidth(self):
         if len(self.upl) == 0 or len(self.dowl) == 0:
-            return
+            return 'error', 'error'
         average_upl = sum(self.upl) / len(self.upl)
         average_dowl = sum(self.dowl) / len(self.dowl)
         return average_upl, average_dowl
