@@ -13,12 +13,9 @@ from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationTool
 from matplotlib.figure import Figure
 from openpyxl.chart import Reference, LineChart
 
-Server_List = {'Singapore': '89.187.160.1', 'Tokyo': 'speedtest.tyo11.jp.leaseweb.net', 'HongKong': '84.17.57.129'}
-Interation_List = {'1': 1, '10': 10, '20': 20, '50': 50, '100': 100, '1000': 1000}
-
 
 class BandwidthTest(tk.Tk):
-    def __init__(self, server='89.187.160.1', port=5201, duration=10, iterations=1):
+    def __init__(self, server='89.187.160.1', port=5201, duration=10, iterations=1, stream=1):
         super().__init__()
         self.upl = []
         self.dowl = []
@@ -26,10 +23,12 @@ class BandwidthTest(tk.Tk):
         self.port = port
         self.duration = duration
         self.iterations = iterations
+        self.stream = stream
         self.test_results = []
         self.window = None
         self.ServerChoosen = None
         self.InterationChoosen = None
+        self.StreamChoosen = None
         self.progress = None
         self.title("Bandwidth Test")
         self.geometry("800x600")
@@ -55,6 +54,7 @@ class BandwidthTest(tk.Tk):
             '-c', self.server,
             '-p', str(self.port),
             '-t', str(self.duration),
+            '-P', str(self.stream),
             '-J',  # JSON output,
         ]
 
@@ -134,7 +134,7 @@ class BandwidthTest(tk.Tk):
             window.message = messagebox.showerror(title="average bandwidth state", message="average bandwidth error")
             window.destroy()
             return
-        server = {i for i in Server_List if Server_List[i] == f"{self.server}"}
+        server = f"{self.server}"
         window.result_text.insert(tk.END, f"Upload: {average_upl} Mbps\n"
                                           f"Dowload: {average_dowl} Mbps\n"
                                           f"Server: {server}\n")
@@ -208,35 +208,25 @@ class BandwidthTest(tk.Tk):
         window.title("configure")
         window.geometry('640x480')
 
-        tk.Label(window, text="Select the Server :",
-                 font=("Times New Roman", 14)).grid(column=0,
-                                                    row=15, padx=10, pady=25)
-        var = tk.StringVar()
-        var2 = tk.StringVar()
-        self.ServerChoosen = ttk.Combobox(window, width=27, textvariable=var)
-        self.ServerChoosen['values'] = ('Singapore', 'Tokyo', 'HongKong')
+        tk.Label(window, text="Enter Server IP :", font=("Times New Roman", 14)).grid(row=1, column=0)
+        self.ServerChoosen = tk.Entry(window, font=("Times New Roman", 14))
+        self.ServerChoosen.grid(column=1, row=1)
 
-        self.ServerChoosen.grid(column=1, row=15)
-        self.ServerChoosen.current(0)
+        tk.Label(window, text="Enter No. Iteration :", font=("Times New Roman", 14)).grid(row=2, column=0)
+        self.InterationChoosen = tk.Entry(window, font=("Times New Roman", 14))
+        self.InterationChoosen.grid(column=1, row=2)
 
-        tk.Label(window, text="Select Interation :",
-                 font=("Times New Roman", 14)).grid(column=0,
-                                                    row=40, padx=10, pady=25)
-        self.InterationChoosen = ttk.Combobox(window, width=27, textvariable=var2)
-        self.InterationChoosen['values'] = ('1', '10', '20', '50', '100', '1000')
-
-        self.InterationChoosen.grid(column=1, row=40)
-        self.InterationChoosen.current(0)
+        tk.Label(window, text="Enter No. Stream :", font=("Times New Roman", 14)).grid(row=3, column=0)
+        self.StreamChoosen = tk.Entry(window, font=("Times New Roman", 14))
+        self.StreamChoosen.grid(column=1, row=3)
 
         save_button = tk.Button(window, text="Save", command=partial(self.save_seletion, window))
-        save_button.grid(column=1, row=45, padx=10, pady=10)
+        save_button.grid(column=1, row=4)
 
     def save_seletion(self, window):
-        choosen_server = self.ServerChoosen.get()
-        self.server = Server_List['{}'.format(choosen_server)]
-
-        choosen_interation = self.InterationChoosen.get()
-        self.iterations = Interation_List['{}'.format(choosen_interation)]
+        self.server = self.ServerChoosen.get()
+        self.iterations = int(self.InterationChoosen.get())
+        self.stream = int(self.StreamChoosen.get())
         window.destroy()
 
 
