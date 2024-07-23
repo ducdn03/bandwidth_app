@@ -29,6 +29,7 @@ class BandwidthTest(tk.Tk):
         self.ServerChoosen = None
         self.InterationChoosen = None
         self.StreamChoosen = None
+        self.PortChoosen = None
         self.progress = None
         self.title("Bandwidth Test")
         self.geometry("800x600")
@@ -157,13 +158,10 @@ class BandwidthTest(tk.Tk):
                                           f"Server: {server}\n")
 
     def bandwidth_test(self):
-        window = tk.Tk()
-        window.title("Bandwidth Test Module")
-        window.geometry('800x600')
-        self.progress = ttk.Progressbar(window, orient="horizontal", length=100, mode='determinate')
+        self.progress = ttk.Progressbar(self.window, orient="horizontal", length=100, mode='determinate')
         self.progress.pack(pady=10)
 
-        start_button = tk.Button(window, text='Start', command=partial(self.run_multiple_tests, window))
+        start_button = tk.Button(self.window, text='Start', command=partial(self.run_multiple_tests, self.window))
         start_button.pack(pady=10)
 
     def export_bandwidth_test_to_excel(self):
@@ -227,30 +225,31 @@ class BandwidthTest(tk.Tk):
         return average_upl, average_dowl
 
     def configure_setting(self):
-        window = tk.Tk()
-        window.title("configure")
-        window.geometry('640x480')
 
-        tk.Label(window, text="Enter Server IP :", font=("Times New Roman", 14)).grid(row=1, column=0)
-        self.ServerChoosen = tk.Entry(window, font=("Times New Roman", 14))
+        tk.Label(self.window, text="Enter Server IP :", font=("Times New Roman", 14)).grid(row=1, column=0)
+        self.ServerChoosen = tk.Entry(self.window, font=("Times New Roman", 14))
         self.ServerChoosen.grid(column=1, row=1)
 
-        tk.Label(window, text="Enter No. Iteration :", font=("Times New Roman", 14)).grid(row=2, column=0)
-        self.InterationChoosen = tk.Entry(window, font=("Times New Roman", 14))
+        tk.Label(self.window, text="Enter No. Iteration :", font=("Times New Roman", 14)).grid(row=2, column=0)
+        self.InterationChoosen = tk.Entry(self.window, font=("Times New Roman", 14))
         self.InterationChoosen.grid(column=1, row=2)
 
-        tk.Label(window, text="Enter No. Stream :", font=("Times New Roman", 14)).grid(row=3, column=0)
-        self.StreamChoosen = tk.Entry(window, font=("Times New Roman", 14))
+        tk.Label(self.window, text="Enter No. Stream :", font=("Times New Roman", 14)).grid(row=3, column=0)
+        self.StreamChoosen = tk.Entry(self.window, font=("Times New Roman", 14))
         self.StreamChoosen.grid(column=1, row=3)
 
-        save_button = tk.Button(window, text="Save", command=partial(self.save_seletion, window))
-        save_button.grid(column=1, row=4)
+        tk.Label(self.window, text="Enter No. Port :", font=("Times New Roman", 14)).grid(row=4, column=0)
+        self.PortChoosen = tk.Entry(self.window, font=("Times New Roman", 14))
+        self.PortChoosen.grid(column=1, row=4)
+
+        save_button = tk.Button(self.window, text="Save", command=partial(self.save_seletion, self.window))
+        save_button.grid(column=1, row=5)
 
     def save_seletion(self, window):
         self.server = self.ServerChoosen.get()
         self.iterations = int(self.InterationChoosen.get())
         self.stream = int(self.StreamChoosen.get())
-        window.destroy()
+        self.port = int(self.PortChoosen.get())
 
 
 if __name__ == '__main__':
