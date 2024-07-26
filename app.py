@@ -10,6 +10,7 @@ import openpyxl
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 from matplotlib.figure import Figure
 from openpyxl.chart import Reference, LineChart
+import threading
 
 
 class BandwidthTest(tk.Tk):
@@ -27,14 +28,14 @@ class BandwidthTest(tk.Tk):
         self.DurationChoosen = None
         self.StreamChoosen = None
         self.PortChoosen = None
-        self.progress = None
+        self.spinner_label = None
+        self.spinner_running = False
         self.main_frame = None
         self.title("Bandwidth Test")
         self.geometry("800x600")
         self.create_widget()
 
     def create_widget(self):
-
         menubar = tk.Menu(self)
 
         option = tk.Menu(menubar, tearoff=0)
@@ -57,7 +58,7 @@ class BandwidthTest(tk.Tk):
             '-p', str(self.port),
             '-t', str(self.duration),
             '-P', str(self.stream),
-            '-J',  # JSON output,
+            '-J',  # JSON output
         ]
 
         if reverse:
@@ -75,7 +76,7 @@ class BandwidthTest(tk.Tk):
                     if reverse:
                         self.test_results.append({
                             'received_Mbps': interval['sum']['bits_per_second'] / 1e6,
-                            })
+                        })
                     else:
                         self.test_results.append({
                             'sent_Mbps': interval['sum']['bits_per_second'] / 1e6,
@@ -86,31 +87,35 @@ class BandwidthTest(tk.Tk):
             self.test_results.append({'error': 'Failed to parse JSON output from iperf3'})
 
     def run_multiple_tests(self):
-        self.test_results.clear()
-        self.upl.clear()
-        self.dowl.clear()
-        error_cnt = 0
-        self.run_iperf3_test(False)
-        self.progress['value'] = 50
-        self.update_idletasks()
-        sleep(2)
-        self.run_iperf3_test(True)
-        self.progress['value'] = 100
-        self.update_idletasks()
+        def test_wrapper():
+            self.test_results.clear()
+            self.upl.clear()
+            self.dowl.clear()
+            error_cnt = 0
+            self.run_iperf3_test(False)
+            self.update_idletasks()
+            sleep(2)
+            self.run_iperf3_test(True)
+            self.update_idletasks()
 
-        for result in self.test_results:
-            if 'sent_Mbps' in result:
-                self.upl.append(round(result['sent_Mbps'], 1))
-            elif 'received_Mbps' in result:
-                self.dowl.append(round(result['received_Mbps'], 1))
-            else:
-                error_cnt += 1
+            for result in self.test_results:
+                if 'sent_Mbps' in result:
+                    self.upl.append(round(result['sent_Mbps'], 1))
+                elif 'received_Mbps' in result:
+                    self.dowl.append(round(result['received_Mbps'], 1))
+                else:
+                    error_cnt += 1
 
-        if error_cnt >= (self.iterations * self.duration / 5):
-            messagebox.showerror(title="Test State", message="Test failed")
-            return
-        messagebox.showinfo(title="Test State", message="Test successfully completed")
-        self.display_graph_plot(upl=self.upl, dowl=self.dowl)
+            if error_cnt >= (self.iterations * self.duration / 5):
+                messagebox.showerror(title="Test State", message="Test failed")
+                self.stop_spinner()
+                return
+            messagebox.showinfo(title="Test State", message="Test successfully completed")
+            self.display_graph_plot(upl=self.upl, dowl=self.dowl)
+            self.stop_spinner()
+
+        self.start_spinner()
+        threading.Thread(target=test_wrapper).start()
 
     def display_graph_plot(self, upl, dowl):
         for widget in self.main_frame.winfo_children():
@@ -129,31 +134,54 @@ class BandwidthTest(tk.Tk):
         plot1.set_ylabel('Speed (Mbps)')
         toolbar = NavigationToolbar2Tk(canvas, self.main_frame)
         toolbar.update()
-        canvas.get_tk_widget().pack()
+        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
 
         result_text = tk.Text(self.main_frame, height=10, width=50)
-        result_text.pack()
+        result_text.pack(fill=tk.BOTH, expand=1)
         average_upl, average_dowl = self.average_bandwidth(upl=upl, dowl=dowl)
         if average_upl == 'error' and average_dowl == 'error':
             messagebox.showerror(title="Average Bandwidth State", message="Average bandwidth error")
             return
-        server = f"{self.server}"
         result_text.insert(tk.END, f"Upload: {average_upl} Mbps\n"
                                    f"Download: {average_dowl} Mbps\n"
-                                   f"Server: {server}\n"
+                                   f"Server: {self.server}\n"
                                    f"Port: {self.port}\n"
-                                   f"Steam: {self.stream}\n"
+                                   f"Stream: {self.stream}\n"
                                    f"Duration: {self.duration}\n")
 
     def bandwidth_test(self):
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
-        self.progress = ttk.Progressbar(self.main_frame, orient="horizontal", length=100, mode='determinate')
-        self.progress.pack(pady=10)
+        self.spinner_label = tk.Label(self.main_frame, text="", font=("Times New Roman", 14))
+        self.spinner_label.pack(pady=10)
 
         start_button = tk.Button(self.main_frame, text='Start', command=self.run_multiple_tests)
         start_button.pack(pady=10)
+
+    def start_spinner(self):
+        self.spinner_running = True
+        self.update_spinner()
+
+    def update_spinner(self):
+        if self.spinner_running:
+            current_text = self.spinner_label.cget("text")
+            if current_text == "":
+                self.spinner_label.config(text="|")
+            elif current_text == "|":
+                self.spinner_label.config(text="/")
+            elif current_text == "/":
+                self.spinner_label.config(text="-")
+            elif current_text == "-":
+                self.spinner_label.config(text="\\")
+            else:
+                self.spinner_label.config(text="|")
+            self.after(100, self.update_spinner)
+
+    def stop_spinner(self):
+        self.spinner_running = False
+        if self.spinner_label:
+            self.spinner_label.config(text="")
 
     def export_bandwidth_test_to_excel(self):
         wb = openpyxl.Workbook()
