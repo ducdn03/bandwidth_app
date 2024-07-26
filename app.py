@@ -40,6 +40,7 @@ class BandwidthTest(tk.Tk):
 
         option = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label='Option', menu=option)
+        option.add_command(label="New Window", command=self.new_window)
         option.add_command(label="BW Test", command=self.bandwidth_test)
         option.add_command(label="Export as Excel", command=self.export_bandwidth_test_to_excel)
         option.add_command(label="Configure Server", command=self.configure_setting)
@@ -50,6 +51,11 @@ class BandwidthTest(tk.Tk):
 
         self.main_frame = ttk.Frame(self)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    @staticmethod
+    def new_window():
+        new = BandwidthTest()
+        new.mainloop()
 
     def run_iperf3_test(self, reverse):
         command = [
@@ -70,7 +76,7 @@ class BandwidthTest(tk.Tk):
 
             if 'error' in result_data:
                 self.test_results.append({'error': result_data['error']})
-                messagebox.showerror(title='test state', message=f"error: {result_data['error']}")
+                messagebox.showerror(title='test state', message=f"error: {result_data['error']}", parent=self)
             else:
                 for interval in result_data['intervals']:
                     if reverse:
@@ -107,10 +113,10 @@ class BandwidthTest(tk.Tk):
                     error_cnt += 1
 
             if error_cnt >= (self.iterations * self.duration / 5):
-                messagebox.showerror(title="Test State", message="Test failed")
+                messagebox.showerror(title="Test State", message="Test failed", parent=self)
                 self.stop_spinner()
                 return
-            messagebox.showinfo(title="Test State", message="Test successfully completed")
+            messagebox.showinfo(title="Test State", message="Test successfully completed", parent=self)
             self.display_graph_plot(upl=self.upl, dowl=self.dowl)
             self.stop_spinner()
 
@@ -140,7 +146,7 @@ class BandwidthTest(tk.Tk):
         result_text.pack(fill=tk.BOTH, expand=1)
         average_upl, average_dowl = self.average_bandwidth(upl=upl, dowl=dowl)
         if average_upl == 'error' and average_dowl == 'error':
-            messagebox.showerror(title="Average Bandwidth State", message="Average bandwidth error")
+            messagebox.showerror(title="Average Bandwidth State", message="Average bandwidth error", parent=self)
             return
         result_text.insert(tk.END, f"Upload: {average_upl} Mbps\n"
                                    f"Download: {average_dowl} Mbps\n"
@@ -228,7 +234,7 @@ class BandwidthTest(tk.Tk):
         save_path = asksaveasfilename(filetypes=files)
         if save_path:
             wb.save(save_path)
-            messagebox.showinfo(title="Export state", message="Export Completed")
+            messagebox.showinfo(title="Export state", message="Export Completed", parent=self)
 
     @staticmethod
     def average_bandwidth(upl, dowl):
@@ -262,11 +268,21 @@ class BandwidthTest(tk.Tk):
         save_button.grid(column=1, row=5)
 
     def save_selection(self):
-        self.server = self.ServerChoosen.get()
-        self.duration = int(self.DurationChoosen.get())
-        self.stream = int(self.StreamChoosen.get())
-        self.port = int(self.PortChoosen.get())
-        messagebox.showinfo(title='save state', message="save completedly")
+        server = self.ServerChoosen.get()
+        duration = self.DurationChoosen.get()
+        stream = self.StreamChoosen.get()
+        port = self.PortChoosen.get()
+
+        if len(server) > 0:
+            self.server = server
+        if duration:
+            self.duration = int(duration)
+        if stream:
+            self.stream = int(stream)
+        if port:
+            self.port = int(port)
+
+        messagebox.showinfo(title='save state', message="save completedly", parent=self)
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
