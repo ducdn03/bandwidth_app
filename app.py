@@ -1,5 +1,6 @@
 import json
 import subprocess
+import time
 from time import sleep
 import tkinter as tk
 from tkinter import messagebox
@@ -57,7 +58,10 @@ class BandwidthTest(tk.Tk):
         new = BandwidthTest()
         new.mainloop()
 
-    def run_iperf3_test(self, reverse):
+    def run_iperf3_test(self, reverse, stop_event):
+        if stop_event.is_set():
+            return
+
         command = [
             'iperf3',
             '-c', self.server,
@@ -71,8 +75,16 @@ class BandwidthTest(tk.Tk):
             command.append('-R')
 
         try:
-            result = subprocess.run(command, capture_output=True, text=True, check=True)
-            result_data = json.loads(result.stdout)
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            while not stop_event.is_set() and process.poll() is None:
+                sleep(10)
+
+            if stop_event.is_set():
+                process.terminate()
+                return
+
+            stdout, stderr = process.communicate()
+            result_data = json.loads(stdout)
 
             if 'error' in result_data:
                 self.test_results.append({'error': result_data['error']})
@@ -92,27 +104,73 @@ class BandwidthTest(tk.Tk):
         except json.JSONDecodeError:
             self.test_results.append({'error': 'Failed to parse JSON output from iperf3'})
 
+
+    def check_server_status(self, stop_event):
+        command = [
+            'iperf3',
+            '-c', self.server,
+            '-p', str(self.port),
+            '-t', '1',
+            '-J',  # JSON output
+        ]
+
+        while not stop_event.is_set():
+            try:
+                result = subprocess.run(command, capture_output=True, text=True, check=True)
+                result_data = json.loads(result.stdout)
+
+                if 'error' in result_data:
+                    print(f"Server error: {result_data['error']}")
+                    stop_event.set()
+                    return
+                else:
+                    sleep(10)
+            except subprocess.CalledProcessError as e:
+                print(f"Server check error: {str(e)}")
+                stop_event.set()
+                return
+            except json.JSONDecodeError:
+                print("Failed to parse JSON output from iperf3 for server status check")
+                stop_event.set()
+                return
+
+
     def run_multiple_tests(self):
         def test_wrapper():
             self.test_results.clear()
             self.upl.clear()
             self.dowl.clear()
             error_cnt = 0
-            self.run_iperf3_test(False)
-            self.update_idletasks()
-            sleep(2)
-            self.run_iperf3_test(True)
-            self.update_idletasks()
+
+            stop_event = threading.Event()
+            start_time = time.time()
+            thread1 = threading.Thread(target=self.run_iperf3_test, args=(False, stop_event))
+            thread2 = threading.Thread(target=self.run_iperf3_test, args=(True, stop_event))
+            thread3 = threading.Thread(target=self.check_server_status, args=(stop_event,))
+
+            thread1.start()
+            thread2.start()
+            thread3.start()
+
+            thread1.join()
+            thread2.join()
+
+            stop_event.set()
+            thread3.join()
+            
+            print(self.test_results)
 
             for result in self.test_results:
                 if 'sent_Mbps' in result:
                     self.upl.append(round(result['sent_Mbps'], 1))
                 elif 'received_Mbps' in result:
                     self.dowl.append(round(result['received_Mbps'], 1))
-                else:
-                    error_cnt += 1
-
-            if error_cnt >= (self.iterations * self.duration / 5):
+                elif 'server_status' in result:
+                    if result['server_status'] == 'down':
+                        print("Server is down")
+            end_time = time.time()
+            print(f"Test duration: {end_time - start_time} seconds")
+            if (error_cnt >= (self.duration / 5)) or len(self.upl) == 0 or len(self.dowl) == 0:
                 messagebox.showerror(title="Test State", message="Test failed", parent=self)
                 self.stop_spinner()
                 return
@@ -159,7 +217,7 @@ class BandwidthTest(tk.Tk):
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
-        self.spinner_label = tk.Label(self.main_frame, text="", font=("Times New Roman", 14))
+        self.spinner_label = tk.Label(self.main_frame, text="", font=("Times New Roman", 50))
         self.spinner_label.pack(pady=10)
 
         start_button = tk.Button(self.main_frame, text='Start', command=self.run_multiple_tests)
