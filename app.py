@@ -12,6 +12,24 @@ from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationTool
 from matplotlib.figure import Figure
 from openpyxl.chart import Reference, LineChart
 import threading
+from threading import Thread
+
+
+class ThreadWithReturnValue(Thread):
+
+    def __init__(self, group=None, target=None, name=None,
+                 args=(), kwargs={}, Verbose=None):
+        Thread.__init__(self, group, target, name, args, kwargs)
+        self._return = None
+
+    def run(self):
+        if self._target is not None:
+            self._return = self._target(*self._args,
+                                        **self._kwargs)
+
+    def join(self, *args):
+        Thread.join(self, *args)
+        return self._return
 
 
 class BandwidthTest(tk.Tk):
@@ -76,6 +94,7 @@ class BandwidthTest(tk.Tk):
 
         try:
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
             while not stop_event.is_set() and process.poll() is None:
                 sleep(10)
 
@@ -83,7 +102,6 @@ class BandwidthTest(tk.Tk):
                 process.terminate()
                 return
 
-            stdout, stderr = process.communicate()
             result_data = json.loads(stdout)
 
             if 'error' in result_data:
@@ -104,36 +122,38 @@ class BandwidthTest(tk.Tk):
         except json.JSONDecodeError:
             self.test_results.append({'error': 'Failed to parse JSON output from iperf3'})
 
-
     def check_server_status(self, stop_event):
         command = [
-            'iperf3',
-            '-c', self.server,
-            '-p', str(self.port),
-            '-t', '1',
-            '-J',  # JSON output
+            'ping',
+            '-c', '1',  # Send only 1 packet
+            self.server,
         ]
 
         while not stop_event.is_set():
             try:
-                result = subprocess.run(command, capture_output=True, text=True, check=True)
-                result_data = json.loads(result.stdout)
+                start_time = time.time()
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                stdout, stderr = process.communicate()
+                while (time.time() - start_time) < 3:
+                    if process.poll() is None:
+                        sleep(1)
 
-                if 'error' in result_data:
-                    print(f"Server error: {result_data['error']}")
+                if ((time.time() - start_time) >= 3) and process.poll() is None:
+                    process.terminate()
                     stop_event.set()
                     return
-                else:
+
+                # Check if 'bytes from' is in the output to determine success
+                if 'bytes from' in stdout:
                     sleep(10)
+                else:
+                    print("Server did not respond to ping")
+                    stop_event.set()
+                    return
             except subprocess.CalledProcessError as e:
                 print(f"Server check error: {str(e)}")
                 stop_event.set()
                 return
-            except json.JSONDecodeError:
-                print("Failed to parse JSON output from iperf3 for server status check")
-                stop_event.set()
-                return
-
 
     def run_multiple_tests(self):
         def test_wrapper():
@@ -143,22 +163,19 @@ class BandwidthTest(tk.Tk):
             error_cnt = 0
 
             stop_event = threading.Event()
-            start_time = time.time()
             thread1 = threading.Thread(target=self.run_iperf3_test, args=(False, stop_event))
             thread2 = threading.Thread(target=self.run_iperf3_test, args=(True, stop_event))
             thread3 = threading.Thread(target=self.check_server_status, args=(stop_event,))
 
             thread1.start()
-            thread2.start()
             thread3.start()
 
             thread1.join()
+            sleep(1)
+            thread2.start()
             thread2.join()
 
             stop_event.set()
-            thread3.join()
-            
-            print(self.test_results)
 
             for result in self.test_results:
                 if 'sent_Mbps' in result:
@@ -168,10 +185,10 @@ class BandwidthTest(tk.Tk):
                 elif 'server_status' in result:
                     if result['server_status'] == 'down':
                         print("Server is down")
-            end_time = time.time()
-            print(f"Test duration: {end_time - start_time} seconds")
+
             if (error_cnt >= (self.duration / 5)) or len(self.upl) == 0 or len(self.dowl) == 0:
                 messagebox.showerror(title="Test State", message="Test failed", parent=self)
+                self.display_graph_plot(upl=self.upl, dowl=self.dowl)
                 self.stop_spinner()
                 return
             messagebox.showinfo(title="Test State", message="Test successfully completed", parent=self)
@@ -180,48 +197,6 @@ class BandwidthTest(tk.Tk):
 
         self.start_spinner()
         threading.Thread(target=test_wrapper).start()
-
-    def display_graph_plot(self, upl, dowl):
-        for widget in self.main_frame.winfo_children():
-            widget.destroy()
-        fig = Figure(figsize=(5, 5), dpi=80)
-        plot1 = fig.add_subplot(111)
-
-        plot1.plot(upl, label='Upload')
-        plot1.plot(dowl, label='Download')
-        plot1.legend()
-
-        canvas = FigureCanvasTkAgg(fig, master=self.main_frame)
-        canvas.draw()
-        canvas.get_tk_widget().pack()
-        plot1.set_xlabel('time (t)')
-        plot1.set_ylabel('Speed (Mbps)')
-        toolbar = NavigationToolbar2Tk(canvas, self.main_frame)
-        toolbar.update()
-        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
-
-        result_text = tk.Text(self.main_frame, height=10, width=50)
-        result_text.pack(fill=tk.BOTH, expand=1)
-        average_upl, average_dowl = self.average_bandwidth(upl=upl, dowl=dowl)
-        if average_upl == 'error' and average_dowl == 'error':
-            messagebox.showerror(title="Average Bandwidth State", message="Average bandwidth error", parent=self)
-            return
-        result_text.insert(tk.END, f"Upload: {average_upl} Mbps\n"
-                                   f"Download: {average_dowl} Mbps\n"
-                                   f"Server: {self.server}\n"
-                                   f"Port: {self.port}\n"
-                                   f"Stream: {self.stream}\n"
-                                   f"Duration: {self.duration}\n")
-
-    def bandwidth_test(self):
-        for widget in self.main_frame.winfo_children():
-            widget.destroy()
-
-        self.spinner_label = tk.Label(self.main_frame, text="", font=("Times New Roman", 50))
-        self.spinner_label.pack(pady=10)
-
-        start_button = tk.Button(self.main_frame, text='Start', command=self.run_multiple_tests)
-        start_button.pack(pady=10)
 
     def start_spinner(self):
         self.spinner_running = True
@@ -294,6 +269,48 @@ class BandwidthTest(tk.Tk):
             wb.save(save_path)
             messagebox.showinfo(title="Export state", message="Export Completed", parent=self)
 
+    def display_graph_plot(self, upl, dowl):
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+        fig = Figure(figsize=(5, 5), dpi=80)
+        plot1 = fig.add_subplot(111)
+
+        plot1.plot(upl, label='Upload')
+        plot1.plot(dowl, label='Download')
+        plot1.legend()
+
+        canvas = FigureCanvasTkAgg(fig, master=self.main_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack()
+        plot1.set_xlabel('time (t)')
+        plot1.set_ylabel('Speed (Mbps)')
+        toolbar = NavigationToolbar2Tk(canvas, self.main_frame)
+        toolbar.update()
+        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+
+        result_text = tk.Text(self.main_frame, height=10, width=50)
+        result_text.pack(fill=tk.BOTH, expand=1)
+        average_upl, average_dowl = self.average_bandwidth(upl=upl, dowl=dowl)
+        if average_upl == 'error' and average_dowl == 'error':
+            messagebox.showerror(title="Average Bandwidth State", message="Average bandwidth error", parent=self)
+            return
+        result_text.insert(tk.END, f"Upload: {average_upl} Mbps\n"
+                                   f"Download: {average_dowl} Mbps\n"
+                                   f"Server: {self.server}\n"
+                                   f"Port: {self.port}\n"
+                                   f"Stream: {self.stream}\n"
+                                   f"Duration: {self.duration}\n")
+
+    def bandwidth_test(self):
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+
+        self.spinner_label = tk.Label(self.main_frame, text="", font=("Times New Roman", 50))
+        self.spinner_label.pack(pady=10)
+
+        start_button = tk.Button(self.main_frame, text='Start', command=self.run_multiple_tests)
+        start_button.pack(pady=10)
+
     @staticmethod
     def average_bandwidth(upl, dowl):
         if len(upl) == 0 or len(dowl) == 0:
@@ -301,6 +318,47 @@ class BandwidthTest(tk.Tk):
         average_upl = sum(upl) / len(upl)
         average_dowl = sum(dowl) / len(dowl)
         return average_upl, average_dowl
+
+    def test_bandwidth_10minute(self, frequency):
+        def test_wrapper():
+            self.test_results.clear()
+            self.upl.clear()
+            self.dowl.clear()
+            self.duration = 300
+            error_cnt = 0
+
+            stop_event = threading.Event()
+            thread1 = threading.Thread(target=self.run_iperf3_test, args=(False, stop_event))
+            thread2 = threading.Thread(target=self.run_iperf3_test, args=(True, stop_event))
+            thread3 = threading.Thread(target=self.check_server_status, args=(stop_event,))
+
+            thread1.start()
+            thread3.start()
+
+            thread1.join()
+            sleep(1)
+            thread2.start()
+            thread2.join()
+
+            stop_event.set()
+
+            for result in self.test_results:
+                if 'sent_Mbps' in result:
+                    self.upl.append(round(result['sent_Mbps'], 1))
+                elif 'received_Mbps' in result:
+                    self.dowl.append(round(result['received_Mbps'], 1))
+                elif 'server_status' in result:
+                    if result['server_status'] == 'down':
+                        print("Server is down")
+
+            if (error_cnt >= (self.duration / 5)) or len(self.upl) == 0 or len(self.dowl) == 0:
+                self.stop_spinner()
+                return
+            messagebox.showinfo(title="Test State", message="Test successfully completed", parent=self)
+            self.stop_spinner()
+
+        self.start_spinner()
+        threading.Thread(target=test_wrapper).start()
 
     def configure_setting(self):
         for widget in self.main_frame.winfo_children():
