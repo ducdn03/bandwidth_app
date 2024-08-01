@@ -76,6 +76,8 @@ class BandwidthTest(tk.Tk):
         total_delay = 50
         delay_frame = 100
         for frame in frames:
+            if not self._is_loading:
+                return
             self.after(total_delay, self._next_frame, frame, label, frames)
             total_delay += delay_frame
         self.after(total_delay, self._next_frame, frame, label, frames, True)
@@ -89,9 +91,7 @@ class BandwidthTest(tk.Tk):
             self.after(1, self._play_gif, label, frames)
             return
         try:
-            label.config(
-                image=frame
-            )
+            label.config(image=frame)
         except tk.TclError:
             return
 
@@ -104,9 +104,16 @@ class BandwidthTest(tk.Tk):
             border=0,
             highlightthickness=0
         )
+        self._is_loading = True
         loading_label.pack()
         frames = self._get_frames('loading.gif')
         self._play_gif(loading_label, frames)
+        return
+
+    def stop_loading(self):
+        self._is_loading = False
+        for child in self.main_frame.winfo_children():
+            child.destroy()
 
     @staticmethod
     def new_window():
@@ -230,6 +237,7 @@ class BandwidthTest(tk.Tk):
                 self.display_graph_plot(upl=self.upl, dowl=self.dowl)
                 return
             messagebox.showinfo(title="Test State", message="Test successfully completed", parent=self)
+            self.stop_loading()
             self.display_graph_plot(upl=self.upl, dowl=self.dowl)
 
         threading.Thread(target=test_wrapper).start()
@@ -392,6 +400,7 @@ class BandwidthTest(tk.Tk):
                 messagebox.showinfo(message="pass")
             else:
                 messagebox.showerror(message="failed")
+            self.stop_loading()
             return
 
         threading.Thread(target=test_wrapper).start()
