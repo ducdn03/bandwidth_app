@@ -12,41 +12,25 @@ from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationTool
 from matplotlib.figure import Figure
 from openpyxl.chart import Reference, LineChart
 import threading
-from threading import Thread
-
-
-class ThreadWithReturnValue(Thread):
-
-    def __init__(self, group=None, target=None, name=None,
-                 args=(), kwargs={}, Verbose=None):
-        Thread.__init__(self, group, target, name, args, kwargs)
-        self._return = None
-
-    def run(self):
-        if self._target is not None:
-            self._return = self._target(*self._args,
-                                        **self._kwargs)
-
-    def join(self, *args):
-        Thread.join(self, *args)
-        return self._return
+from PIL import Image, ImageTk
 
 
 class BandwidthTest(tk.Tk):
-    def __init__(self, server='192.168.2.235', port=5201, duration=10, iterations=1, stream=10):
+    def __init__(self, server='89.187.160.1', port=5201, duration=10, iterations=1, stream=10):
         super().__init__()
         self.upl = []
         self.dowl = []
+        self.error_cnt = 0
         self.server = server
         self.port = port
         self.duration = duration
         self.iterations = iterations
         self.stream = stream
         self.test_results = []
-        self.ServerChoosen = None
-        self.DurationChoosen = None
-        self.StreamChoosen = None
-        self.PortChoosen = None
+        self.ServerChosen = None
+        self.DurationChosen = None
+        self.StreamChosen = None
+        self.PortChosen = None
         self.spinner_label = None
         self.spinner_running = False
         self.main_frame = None
@@ -63,6 +47,7 @@ class BandwidthTest(tk.Tk):
         option.add_command(label="BW Test", command=self.bandwidth_test)
         option.add_command(label="Export as Excel", command=self.export_bandwidth_test_to_excel)
         option.add_command(label="Configure Server", command=self.configure_setting)
+        option.add_command(label="Power Wifi Test", command=self.testing_power_wifi)
         option.add_separator()
         option.add_command(label="Exit", command=self.destroy)
 
@@ -70,6 +55,58 @@ class BandwidthTest(tk.Tk):
 
         self.main_frame = ttk.Frame(self)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    @staticmethod
+    def _get_frames(img):
+        with Image.open(img) as gif:
+            index = 0
+            frames = []
+            while True:
+                try:
+                    gif.seek(index)
+                    frame = ImageTk.PhotoImage(gif)
+                    frames.append(frame)
+                except EOFError:
+                    break
+
+                index += 1
+            return frames
+
+    def _play_gif(self, label, frames):
+        total_delay = 50
+        delay_frame = 100
+        for frame in frames:
+            self.after(total_delay, self._next_frame, frame, label, frames)
+            total_delay += delay_frame
+        self.after(total_delay, self._next_frame, frame, label, frames, True)
+
+    def _next_frame(self, frame, label, frames, restart=False):
+        if restart:
+            try:
+                label.config()
+            except tk.TclError:
+                return
+            self.after(1, self._play_gif, label, frames)
+            return
+        try:
+            label.config(
+                image=frame
+            )
+        except tk.TclError:
+            return
+
+    def loading(self):
+        for child in self.main_frame.winfo_children():
+            child.destroy()
+        loading_label = tk.Label(
+            self.main_frame,
+            background='WHITE',
+            border=0,
+            highlightthickness=0
+        )
+        loading_label.pack()
+        frames = self._get_frames('loading.gif')
+        self._play_gif(loading_label, frames)
 
     @staticmethod
     def new_window():
@@ -160,7 +197,7 @@ class BandwidthTest(tk.Tk):
             self.test_results.clear()
             self.upl.clear()
             self.dowl.clear()
-            error_cnt = 0
+            self.error_cnt = 0
 
             stop_event = threading.Event()
             thread1 = threading.Thread(target=self.run_iperf3_test, args=(False, stop_event))
@@ -185,42 +222,18 @@ class BandwidthTest(tk.Tk):
                 elif 'server_status' in result:
                     if result['server_status'] == 'down':
                         print("Server is down")
+                elif 'error' in result:
+                    self.error_cnt += 1
 
-            if (error_cnt >= (self.duration / 5)) or len(self.upl) == 0 or len(self.dowl) == 0:
+            if (self.error_cnt >= (self.duration / 5)) or len(self.upl) == 0 or len(self.dowl) == 0:
                 messagebox.showerror(title="Test State", message="Test failed", parent=self)
                 self.display_graph_plot(upl=self.upl, dowl=self.dowl)
-                self.stop_spinner()
                 return
             messagebox.showinfo(title="Test State", message="Test successfully completed", parent=self)
             self.display_graph_plot(upl=self.upl, dowl=self.dowl)
-            self.stop_spinner()
 
-        self.start_spinner()
         threading.Thread(target=test_wrapper).start()
-
-    def start_spinner(self):
-        self.spinner_running = True
-        self.update_spinner()
-
-    def update_spinner(self):
-        if self.spinner_running:
-            current_text = self.spinner_label.cget("text")
-            if current_text == "":
-                self.spinner_label.config(text="|")
-            elif current_text == "|":
-                self.spinner_label.config(text="/")
-            elif current_text == "/":
-                self.spinner_label.config(text="-")
-            elif current_text == "-":
-                self.spinner_label.config(text="\\")
-            else:
-                self.spinner_label.config(text="|")
-            self.after(100, self.update_spinner)
-
-    def stop_spinner(self):
-        self.spinner_running = False
-        if self.spinner_label:
-            self.spinner_label.config(text="")
+        self.loading()
 
     def export_bandwidth_test_to_excel(self):
         wb = openpyxl.Workbook()
@@ -319,14 +332,24 @@ class BandwidthTest(tk.Tk):
         average_dowl = sum(dowl) / len(dowl)
         return average_upl, average_dowl
 
-    def test_bandwidth_10minute(self, frequency):
+    def testing_power_wifi(self):
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+
+        start_button = tk.Button(self.main_frame, text='Start', command=self.start_power_wifi_test)
+        start_button.pack(pady=10)
+
+    def start_power_wifi_test(self):
+        self.test_pass = []
+        self.run_10minutes_bandwidth_test('2.4Ghz')
+
+    def run_10minutes_bandwidth_test(self, frequency):
         def test_wrapper():
             self.test_results.clear()
             self.upl.clear()
             self.dowl.clear()
-            self.duration = 300
-            error_cnt = 0
-
+            self.error_cnt = 0
+            print(frequency)
             stop_event = threading.Event()
             thread1 = threading.Thread(target=self.run_iperf3_test, args=(False, stop_event))
             thread2 = threading.Thread(target=self.run_iperf3_test, args=(True, stop_event))
@@ -350,44 +373,58 @@ class BandwidthTest(tk.Tk):
                 elif 'server_status' in result:
                     if result['server_status'] == 'down':
                         print("Server is down")
+                elif 'error' in result:
+                    self.error_cnt += 1
 
-            if (error_cnt >= (self.duration / 5)) or len(self.upl) == 0 or len(self.dowl) == 0:
-                self.stop_spinner()
+            if (self.error_cnt >= self.duration/5) or len(self.upl) == 0 or len(self.dowl) == 0:
                 return
-            messagebox.showinfo(title="Test State", message="Test successfully completed", parent=self)
-            self.stop_spinner()
 
-        self.start_spinner()
+            average_upl, average_dowl = self.average_bandwidth(self.upl, self.dowl)
+            if frequency == '2.4Ghz':
+                if average_dowl >= 75:
+                    self.test_pass.append('2.4Ghz bandwidth passed')
+            elif frequency == '5.0Ghz':
+                if average_dowl >= 280:
+                    self.test_pass.append('5.0Ghz bandwidth passed')
+            print(average_dowl)
+            print(self.test_pass)
+            if len(self.test_pass) == 1:
+                messagebox.showinfo(message="pass")
+            else:
+                messagebox.showerror(message="failed")
+            return
+
         threading.Thread(target=test_wrapper).start()
+        self.loading()
 
     def configure_setting(self):
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
         tk.Label(self.main_frame, text="Enter Server IP:", font=("Times New Roman", 14)).grid(row=1, column=0)
-        self.ServerChoosen = tk.Entry(self.main_frame, font=("Times New Roman", 14))
-        self.ServerChoosen.grid(column=1, row=1)
+        self.ServerChosen = tk.Entry(self.main_frame, font=("Times New Roman", 14))
+        self.ServerChosen.grid(column=1, row=1)
 
         tk.Label(self.main_frame, text="Enter No. Duration:", font=("Times New Roman", 14)).grid(row=2, column=0)
-        self.DurationChoosen = tk.Entry(self.main_frame, font=("Times New Roman", 14))
-        self.DurationChoosen.grid(column=1, row=2)
+        self.DurationChosen = tk.Entry(self.main_frame, font=("Times New Roman", 14))
+        self.DurationChosen.grid(column=1, row=2)
 
         tk.Label(self.main_frame, text="Enter No. Stream:", font=("Times New Roman", 14)).grid(row=3, column=0)
-        self.StreamChoosen = tk.Entry(self.main_frame, font=("Times New Roman", 14))
-        self.StreamChoosen.grid(column=1, row=3)
+        self.StreamChosen = tk.Entry(self.main_frame, font=("Times New Roman", 14))
+        self.StreamChosen.grid(column=1, row=3)
 
         tk.Label(self.main_frame, text="Enter No. Port:", font=("Times New Roman", 14)).grid(row=4, column=0)
-        self.PortChoosen = tk.Entry(self.main_frame, font=("Times New Roman", 14))
-        self.PortChoosen.grid(column=1, row=4)
+        self.PortChosen = tk.Entry(self.main_frame, font=("Times New Roman", 14))
+        self.PortChosen.grid(column=1, row=4)
 
         save_button = tk.Button(self.main_frame, text="Save", command=self.save_selection)
         save_button.grid(column=1, row=5)
 
     def save_selection(self):
-        server = self.ServerChoosen.get()
-        duration = self.DurationChoosen.get()
-        stream = self.StreamChoosen.get()
-        port = self.PortChoosen.get()
+        server = self.ServerChosen.get()
+        duration = self.DurationChosen.get()
+        stream = self.StreamChosen.get()
+        port = self.PortChosen.get()
 
         if len(server) > 0:
             self.server = server
@@ -398,7 +435,7 @@ class BandwidthTest(tk.Tk):
         if port:
             self.port = int(port)
 
-        messagebox.showinfo(title='save state', message="save completedly", parent=self)
+        messagebox.showinfo(title='save state', message="save completed", parent=self)
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
