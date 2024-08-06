@@ -6,13 +6,15 @@ import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
 from tkinter.filedialog import asksaveasfilename
-from functools import partial
 import openpyxl
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
 from matplotlib.figure import Figure
 from openpyxl.chart import Reference, LineChart
 import threading
 from PIL import Image, ImageTk
+
+
+CONST_ACCEPTED_RSSI = -50
 
 
 class BandwidthTest(tk.Tk):
@@ -110,7 +112,6 @@ class BandwidthTest(tk.Tk):
 
     def stop_loading(self):
         self._is_loading = False
-        self.clear_main_frame()
 
     @staticmethod
     def new_window():
@@ -220,6 +221,7 @@ class BandwidthTest(tk.Tk):
             if self.is_test_bandwidth_fail():
                 messagebox.showerror(title="Test State", message="Test failed", parent=self)
                 self.display_graph_plot(upl=self.upl, dowl=self.dowl)
+                self.stop_loading()
                 return
 
             messagebox.showinfo(title="Test State", message="Test successfully completed", parent=self)
@@ -329,16 +331,94 @@ class BandwidthTest(tk.Tk):
         start_button.pack(pady=10)
 
     def start_power_wifi_test(self):
+        def display_test_result():
+            for result in self.test_pass:
+                print(result)
+                if '2.4Ghz rssi passed' in result:
+                    rssi_2ghz_value = tk.Label(self.main_frame, text=result['2.4Ghz rssi passed'],
+                                               fg="green")
+                    rssi_2ghz_value.grid(column=2, row=0)
+                elif '5.0Ghz rssi passed' in result:
+                    rssi_5ghz_value = tk.Label(self.main_frame, text=result['5.0Ghz rssi passed'],
+                                               fg="green")
+                    rssi_5ghz_value.grid(column=2, row=1)
+                elif '2.4Ghz bandwidth passed' in result:
+                    bandwidth_2ghz_value = tk.Label(self.main_frame, text=result['2.4Ghz bandwidth passed'],
+                                                    fg="green")
+                    bandwidth_2ghz_value.grid(column=2, row=2)
+                elif '5.0Ghz bandwidth passed' in result:
+                    bandwidth_5ghz_value = tk.Label(self.main_frame, text=result['5.0Ghz bandwidth passed'],
+                                                    fg="green")
+                    bandwidth_5ghz_value.grid(column=2, row=3)
+
+        def log_result():
+            self.clear_main_frame()
+            print("log")
+            rssi_2ghz_label = tk.Label(self.main_frame, text="2.4 Ghz rssi test",
+                                       font=("Times New Roman", 20))
+            rssi_2ghz_label.grid(column=0, row=0)
+            rssi_2ghz_result = tk.Label(self.main_frame, font=("Times New Roman", 20), text="FAILED", fg="red")
+            rssi_2ghz_result.grid(column=1, row=0)
+
+            rssi_5ghz_label = tk.Label(self.main_frame, text="5.0 Ghz rssi test",
+                                       font=("Times New Roman", 20))
+            rssi_5ghz_label.grid(column=0, row=1)
+            rssi_5ghz_result = tk.Label(self.main_frame, font=("Times New Roman", 20), text="FAILED", fg="red")
+            rssi_5ghz_result.grid(column=1, row=1)
+
+            bandwidth_2ghz_label = tk.Label(self.main_frame, text="2.4 Ghz bandwidth test",
+                                            font=("Times New Roman", 20))
+            bandwidth_2ghz_label.grid(column=0, row=2)
+            bandwidth_2ghz_result = tk.Label(self.main_frame, font=("Times New Roman", 20), text="FAILED", fg="red")
+            bandwidth_2ghz_result.grid(column=1, row=2)
+
+            bandwidth_5ghz_label = tk.Label(self.main_frame, text="5.0 Ghz bandwidth test",
+                                            font=("Times New Roman", 20))
+            bandwidth_5ghz_label.grid(column=0, row=3)
+            bandwidth_5ghz_result = tk.Label(self.main_frame, font=("Times New Roman", 20), text="FAILED", fg="red")
+            bandwidth_5ghz_result.grid(column=1, row=3)
+
+            result_button = tk.Button(self.main_frame, text="See Result", command=display_test_result)
+            result_button.grid(column=1, row=4)
+
+            for result in self.test_pass:
+                if '2.4Ghz rssi passed' in result:
+                    rssi_2ghz_result.config(text="PASS", fg="green")
+                elif '5.0Ghz rssi passed' in result:
+                    rssi_5ghz_result.config(text="PASS", fg="green")
+                elif '2.4Ghz bandwidth passed' in result:
+                    if result['2.4Ghz bandwidth passed'] >= 75:
+                        bandwidth_2ghz_result.config(text="PASS", fg="green")
+                elif '5.0Ghz bandwidth passed' in result:
+                    if result['5.0Ghz bandwidth passed'] >= 280:
+                        bandwidth_5ghz_result.config(text="PASS", fg="green")
+
+        def test_5ghz():
+            rssi_5ghz_value = self.get_rssi_value()
+            if rssi_5ghz_value >= CONST_ACCEPTED_RSSI:
+                self.test_pass.append({'5.0Ghz rssi passed': rssi_5ghz_value})
+            self.run_10minutes_bandwidth_test('5.0Ghz')
+            while self._is_loading:
+                sleep(1)
+            log_result()
+
+        def test_2ghz():
+            rssi_value = self.get_rssi_value()
+            if rssi_value >= CONST_ACCEPTED_RSSI:
+                self.test_pass.append({'2.4Ghz rssi passed': rssi_value})
+            self.run_10minutes_bandwidth_test('2.4Ghz')
+
         self.clear_main_frame()
 
         self.test_pass = []
-        #Test AP in 2.4Ghz
-        rssi_value = self.get_rssi_value()
-        self.run_10minutes_bandwidth_test('2.4Ghz')
 
-        #Test AP in 5Ghz
-        rssi_value = self.get_rssi_value()
-        self.run_10minutes_bandwidth_test('5.0Ghz')
+        test_2ghz()
+
+        config_label = tk.Label(self.main_frame, text="wait for config the AP to 5.0Ghz ...")
+        config_label.pack()
+
+        start_button = tk.Button(self.main_frame, text="start", command=test_5ghz)
+        start_button.pack()
 
     def run_10minutes_bandwidth_test(self, frequency):
         def test_wrapper():
@@ -369,11 +449,10 @@ class BandwidthTest(tk.Tk):
             average_upl, average_dowl = self.average_bandwidth(self.upl, self.dowl)
             self.stop_loading()
             if frequency == '2.4Ghz':
-                if average_dowl >= 10:
-                    self.test_pass.append({'2.4Ghz bandwidth passed': average_dowl})
+                self.test_pass.append({'2.4Ghz bandwidth passed': average_dowl})
             elif frequency == '5.0Ghz':
-                if average_dowl >= 10:
-                    self.test_pass.append({'5.0Ghz bandwidth passed': average_dowl})
+                self.test_pass.append({'5.0Ghz bandwidth passed': average_dowl})
+            messagebox.showinfo(message="test complete")
             return
 
         threading.Thread(target=test_wrapper).start()
@@ -423,7 +502,7 @@ class BandwidthTest(tk.Tk):
         line = line.replace('/100', '').replace('=', ' ')
         parts = line.split()
         signal = parts[5]
-        return signal
+        return int(signal)
 
     def clear_main_frame(self):
         for widget in self.main_frame.winfo_children():
@@ -446,6 +525,7 @@ class BandwidthTest(tk.Tk):
                     print("Server is down")
             elif 'error' in result:
                 self.error_cnt += 1
+                print('error', self.error_cnt)
 
     def is_test_bandwidth_fail(self):
         return (self.error_cnt >= self.duration/5) or len(self.upl) == 0 or len(self.dowl) == 0
