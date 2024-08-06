@@ -332,7 +332,13 @@ class BandwidthTest(tk.Tk):
         self.clear_main_frame()
 
         self.test_pass = []
+        #Test AP in 2.4Ghz
+        rssi_value = self.get_rssi_value()
         self.run_10minutes_bandwidth_test('2.4Ghz')
+
+        #Test AP in 5Ghz
+        rssi_value = self.get_rssi_value()
+        self.run_10minutes_bandwidth_test('5.0Ghz')
 
     def run_10minutes_bandwidth_test(self, frequency):
         def test_wrapper():
@@ -394,6 +400,30 @@ class BandwidthTest(tk.Tk):
 
         save_button = tk.Button(self.main_frame, text="Save", command=self.save_selection)
         save_button.grid(column=1, row=5)
+
+    @staticmethod
+    def get_wifi_interface():
+        command = [
+            'lshw',
+            '-C',
+            'network',
+            '-json'
+        ]
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+        result = json.loads(stdout)
+        for res in result:
+            if res["description"] == "Wireless interface":
+                return res["logicalname"]
+
+    @staticmethod
+    def get_rssi_value():
+        result = subprocess.run(['iwconfig', 'wlp2s0'], capture_output=True, text=True)
+        line = next(line for line in result.stdout.splitlines() if 'Link' in line)
+        line = line.replace('/100', '').replace('=', ' ')
+        parts = line.split()
+        signal = parts[5]
+        return signal
 
     def clear_main_frame(self):
         for widget in self.main_frame.winfo_children():
